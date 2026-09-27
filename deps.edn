@@ -1,0 +1,24 @@
+{:paths ["src" "resources"
+         ;"target/classes"
+         ]
+ :deps {org.clojure/clojure {:mvn/version "1.11.1"}
+        ;org.clojure/core.async {:mvn/version "1.10.874-alpha3"}
+
+        top.kzre/krro-core {:mvn/version "0.1.0"}
+
+
+        top.kzre/krro-plugin-undo {:mvn/version "0.1.0"}
+
+
+        com.taoensso/timbre {:mvn/version "6.3.1"}
+        com.taoensso/tufte {:mvn/version "2.6.3"}
+        }
+
+ :aliases
+ {:build
+  {:deps {io.github.clojure/tools.build {:mvn/version "0.9.6"}
+          org.slf4j/slf4j-nop {:mvn/version "2.0.7"}}
+   :ns-default build}
+  :run
+  {:extra-paths ["target/classes"]
+   :main-opts ["-m" "top.kzre.krro.app.core"]}}}
