@@ -21,40 +21,16 @@
     </properties>
 
     <dependencies>
-        <!-- Clojure -->
-        <dependency>
-            <groupId>org.clojure</groupId>
-            <artifactId>clojure</artifactId>
-            <version>${clojure.version}</version>
-        </dependency>
 
-        <!-- Logging -->
-        <dependency>
-            <groupId>com.taoensso</groupId>
-            <artifactId>timbre</artifactId>
-            <version>${timbre.version}</version>
-        </dependency>
-
-        <!-- 性能分析 -->
-        <dependency>
-            <groupId>com.taoensso</groupId>
-            <artifactId>tufte</artifactId>
-            <version>2.6.3</version>
-        </dependency>
-
-
-        <!-- Krrō modules -->
+<!--        直接使用来自painting的传递依赖-->
         <dependency>
             <groupId>top.kzre</groupId>
-            <artifactId>krro-core</artifactId>
+            <artifactId>krro-plugin-painting-core</artifactId>
             <version>0.1.0</version>
         </dependency>
-
-
-        <!-- 撤销插件 -->
         <dependency>
             <groupId>top.kzre</groupId>
-            <artifactId>krro-plugin-undo</artifactId>
+            <artifactId>krro-d3</artifactId>
             <version>0.1.0</version>
         </dependency>
     </dependencies>
