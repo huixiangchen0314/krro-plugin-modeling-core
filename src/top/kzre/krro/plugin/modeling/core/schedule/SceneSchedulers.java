@@ -13,9 +13,8 @@ public final class SceneSchedulers {
 
     private SceneSchedulers() {}
 
-    public static SceneScheduler createGL(
-            ProjectAssetLib assetLib,
-            ProjectScene scene,
+    public static GLSceneScheduler createGL(
+            long sceneId,
             GLRenderFlyweight flyweight) {
         GLStudioSceneRenderer studioRenderer = new GLStudioSceneRenderer(flyweight);
         Map<String, SceneRenderer> rendererMap = new HashMap<>();
@@ -23,7 +22,6 @@ public final class SceneSchedulers {
 
         return new GLSceneScheduler(
                 rendererMap,
-                assetLib,
-                scene);
+                sceneId);
     }
 }

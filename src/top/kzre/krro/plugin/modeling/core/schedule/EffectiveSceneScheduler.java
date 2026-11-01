@@ -4,9 +4,9 @@ import top.kzre.krro.d3.core.asset.MeshAsset;
 import top.kzre.krro.d3.core.geometry.ExtendedMesh;
 import top.kzre.krro.d3.core.scene.AssetMeshRef;
 import top.kzre.krro.d3.core.scene.Scene;
+import top.kzre.krro.d3.core.scene.SceneObject;
 import top.kzre.krro.d3.core.util.cow.*;
-import top.kzre.krro.plugin.modeling.core.project.ProjectAssetLib;
-import top.kzre.krro.plugin.modeling.core.project.ProjectScene;
+import top.kzre.krro.plugin.modeling.core.project.K3DRuntime;
 import top.kzre.krro.plugin.modeling.core.schedule.resource.Geometry;
 import top.kzre.krro.plugin.modeling.core.schedule.resource.ResourceKey;
 
@@ -20,11 +20,10 @@ public abstract class EffectiveSceneScheduler extends AbstractSceneScheduler {
     ResourceKey<ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>>>
             CORNER_POSITIONS = Geometry.cornerPositions();
 
-    public EffectiveSceneScheduler(Map<String, SceneRenderer> renderers,
-                                   ProjectAssetLib assetLib,
-                                   ProjectScene scene) {
-        super(renderers, assetLib, scene);
+    public EffectiveSceneScheduler(Map<String, SceneRenderer> renderers, long sceneId) {
+        super(renderers, sceneId);
     }
+
 
     /**
      * 每个场景单线程调度，不并发
@@ -42,7 +41,12 @@ public abstract class EffectiveSceneScheduler extends AbstractSceneScheduler {
             return;
         }
         // 本地化 sessions
-        Collection<Session> finalSessions = Collections.unmodifiableCollection(new ArrayList<>(sessions));
+        Collection<Session> finalSessions = new ArrayList<>();
+        for (Session session : sessions) {
+            if (session.isValid()) {
+                finalSessions.add(session);
+            }
+        }
 
         // 去重资源集
         Set<ResourceKey<?>> resourceSet = new HashSet<>();
@@ -57,58 +61,70 @@ public abstract class EffectiveSceneScheduler extends AbstractSceneScheduler {
 
         // 固化版本
         // TODO 原版本上触发缓存，需要 ProjectAssetLib 做同步
-        try(ProjectAssetLib finalAssetLib = assetLib.shared()) {
-            try (ProjectScene finalScene = scene.shared()) {
-                Scene hierachy = finalScene.getSceneEditor().scene();
-                ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>>
-                        cornerPositions
-                        = ResourceTable.create();
-                // 遍历场景
-                hierachy.objects().getSnapshot().getMap().forEach((objId, obj)->{
-                    // 物体有网格引用
-                    if (obj instanceof AssetMeshRef){
-                        AssetMeshRef meshRef = (AssetMeshRef) obj;
-                        long meshAssetId = meshRef.assetId();
-                        MeshAsset meshAsset = finalAssetLib.getMeshAsset(meshAssetId);
-                        // 送去渲染
-                        ExtendedMesh mesh = meshAsset.mesh();
-                        if (resourceSet.contains(CORNER_POSITIONS)){
-                            // 被声明的资源
-                            CopyOnWriteFloats cps = mesh.getCornerPositions().shared();
-                            DefaultCopyOnWriteObject<ListResource<CopyOnWriteFloats>> cornerPos
-                                    = new DefaultCopyOnWriteObject<>(
+        try {
+            K3DRuntime.readAssetLib(finalAssetLib->{
+                try {
+                    K3DRuntime.readScene(sceneId, finalScene->{
+                        Scene hierarchy = finalScene.getSceneEditor().scene();
+                        ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>>
+                                cornerPositions
+                                = ResourceTable.create();
+                        // 遍历场景 TODO  这个引用计数不过关
+                        LongObjectMapResource<SceneObject> rObjs = hierarchy.objects().getSnapshot();
+                        rObjs.getMap()
+                                .forEach((objId, obj)->{
+                            // 物体有网格引用
+                            if (obj instanceof AssetMeshRef){
+                                AssetMeshRef meshRef = (AssetMeshRef) obj;
+                                long meshAssetId = meshRef.assetId();
+                                MeshAsset meshAsset = finalAssetLib.getMeshAsset(meshAssetId);
+                                // 送去渲染
+                                ExtendedMesh mesh = meshAsset.mesh();
+                                if (resourceSet.contains(CORNER_POSITIONS)){
+                                    // 被声明的资源
+                                    CopyOnWriteFloats cps = mesh.getCornerPositions().shared();
+                                    DefaultCopyOnWriteObject<ListResource<CopyOnWriteFloats>> cornerPos
+                                            = new DefaultCopyOnWriteObject<>(
                                             new ListResource<>(
                                                     Collections.singletonList(cps)));
-                            ResourceTables.add(cornerPositions, objId, cornerPos);
-                        }
-                    }
-                });
-                CORNER_POSITIONS.value(cornerPositions);
+                                    ResourceTables.add(cornerPositions, objId, cornerPos);
+                                }
+                            }
+                        });
+                        CORNER_POSITIONS.value(cornerPositions);
 
-                // TODO 进阶数据计算。节点图等。
+                        // TODO 进阶数据计算。节点图等。
 
-                // 向渲染器注入资源
-                renderResources.forEach((s, resourceKeys) -> {
-                    resourceKeys.forEach(k->{
-                        if (CORNER_POSITIONS.equals(k)){
-                            ResourceKey<ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>>>
-                                    k1 = (ResourceKey<ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>>>) k;
-                            k1.value(CORNER_POSITIONS.value().shared());
+                        // 向渲染器注入资源
+                        renderResources.forEach((s, resourceKeys) -> {
+                            resourceKeys.forEach(k->{
+                                if (CORNER_POSITIONS.equals(k)){
+                                    ResourceKey<ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>>>
+                                            k1 = (ResourceKey<ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>>>) k;
+                                    k1.value(CORNER_POSITIONS.value().shared());
+                                }
+                            });
+                        });
+
+                        // 传递给渲染器后，调度器资源立刻释放
+                        CORNER_POSITIONS.doIfPresent(ResourceTable::close);
+
+                        for (Session session : finalSessions) {
+                            String renderId = session.getRenderId();
+                            SceneRenderer renderer = renderers.get(renderId);
+                            // 渲染器渲染视口会话
+                            renderer.render(session);
                         }
                     });
-                });
-
-                // 传递给渲染器后，调度器资源立刻释放
-                CORNER_POSITIONS.doIfPresent(ResourceTable::close);
-
-                for (Session session : finalSessions) {
-                    String renderId = session.getRenderId();
-                    SceneRenderer renderer = renderers.get(renderId);
-                    // 渲染器渲染视口会话
-                    renderer.render(session);
+                    // 渲染时候出错，日志，并不产出任何异常
+                } catch (Exception e) {
+                    System.err.println(e.getMessage());
+                    System.err.println(Arrays.toString(e.getStackTrace()));
                 }
 
-            }
+            });
+        } catch (Exception e) {
+            System.err.println(e.getMessage());
         }
 
     }

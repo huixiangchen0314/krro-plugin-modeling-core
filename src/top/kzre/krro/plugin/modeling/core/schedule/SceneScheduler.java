@@ -4,7 +4,7 @@ package top.kzre.krro.plugin.modeling.core.schedule;
  * 场景调度器
  */
 public interface SceneScheduler {
-
+    long getSceneId();
     /**
      * 开启渲染会话，指定渲染器
      */

@@ -1,8 +1,5 @@
 package top.kzre.krro.plugin.modeling.core.schedule;
 
-import top.kzre.krro.plugin.modeling.core.project.ProjectAssetLib;
-import top.kzre.krro.plugin.modeling.core.project.ProjectScene;
-
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -15,13 +12,12 @@ public abstract class AbstractSceneScheduler implements SceneScheduler {
     protected final Map<String, SceneRenderer> renderers;
     protected final CopyOnWriteArrayList<Session> sessions = new CopyOnWriteArrayList<>();
 
-    protected final ProjectAssetLib assetLib;
-    protected final ProjectScene scene;
+    protected final long sceneId;
+
     public AbstractSceneScheduler(Map<String, SceneRenderer> renderers,
-                                  ProjectAssetLib assetLib,
-                                  ProjectScene scene) {
-        this.assetLib = assetLib;
-        this.scene = scene;
+                                  long sceneId) {
+        this.sceneId = sceneId;
+
         if (renderers == null) throw new NullPointerException("renderers cannot be null");
         if (renderers.isEmpty()) throw new IllegalArgumentException("renderers cannot be empty");
         // 渲染器，静态配置，绝对不可变
@@ -39,6 +35,11 @@ public abstract class AbstractSceneScheduler implements SceneScheduler {
         return session;
     }
 
+    @Override
+    public long getSceneId() {
+        return sceneId;
+    }
+
     /**
      * 拉取单帧渲染.
      * 1. 场景渲染器声明资源。
@@ -46,7 +47,6 @@ public abstract class AbstractSceneScheduler implements SceneScheduler {
      * 3. 渲染器渲染，推送结果。
      */
     public abstract void poll();
-
 
     public void close(){
         // 关闭每个会话

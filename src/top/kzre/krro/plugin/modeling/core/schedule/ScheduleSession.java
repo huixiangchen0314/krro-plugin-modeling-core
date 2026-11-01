@@ -2,20 +2,28 @@ package top.kzre.krro.plugin.modeling.core.schedule;
 
 import top.kzre.krro.core.util.BufferedChannel;
 import top.kzre.krro.core.util.IChannel;
+import top.kzre.krro.plugin.modeling.core.viewport.ViewportMath;
+import top.kzre.krro.util.pool.FloatsHolder;
+import top.kzre.krro.util.pool.FloatsPool;
+import top.kzre.krro.util.pool.PoolManagers;
+import top.kzre.krro.util.pool.PoolsHolder;
 import top.kzre.krro.util.tile.TiledCanvas;
 
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 基础抽象实现， 子类持有具体资源
  */
 public abstract class ScheduleSession implements Session {
+    public static final int MAT4_LENGTH = 16;
     private int width;
     private int height;
 
     private final IChannel<TiledCanvas> viewChannel;
     // 用户自己保证只在 UI 线程改, 我们可见就好
     private volatile Runnable onDirty;
+    private volatile float[] viewProjMat4;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     protected ScheduleSession() {
@@ -38,6 +46,28 @@ public abstract class ScheduleSession implements Session {
     public void setOnDirty(Runnable cb) {
         this.onDirty = cb;
     }
+
+    @Override
+    public void setViewProjection(float[] viewProjMat4) {
+        if (this.viewProjMat4 == null) {
+            this.viewProjMat4 = new float[MAT4_LENGTH];
+        }
+        System.arraycopy(viewProjMat4, 0, this.viewProjMat4, 0, MAT4_LENGTH);
+    }
+
+    /**
+     * 总是返回一个安全的拷贝
+     */
+    public float[] getViewProjMat4(){
+        float[] m = this.viewProjMat4;
+        if (m == null){
+            // 一個默认位置
+            return ViewportMath.aspectViewProjMat4(this.width, this.height,
+                    45.0f, 0.1f, 100.0f, -5.5f);
+        }
+        return Arrays.copyOf(m, m.length);
+    }
+
 
     public boolean queryClosed(){
         // 快速路径
@@ -81,4 +111,8 @@ public abstract class ScheduleSession implements Session {
 
     protected abstract void onClose();
 
+    @Override
+    public boolean isValid() {
+        return width > 0 && height > 0;
+    }
 }

@@ -34,7 +34,7 @@ public final class ProjectScene implements CopyOnWrite<ProjectScene> {
 
     @Override
     public ProjectScene shared() {
-        return new ProjectScene(sceneEditor);
+        return new ProjectScene(sceneEditor.shared());
     }
 
     @Override

@@ -12,6 +12,7 @@ import top.kzre.krro.plugin.modeling.core.schedule.ScheduleSession;
 import top.kzre.krro.plugin.modeling.core.schedule.Session;
 import top.kzre.krro.plugin.modeling.core.schedule.resource.Geometry;
 import top.kzre.krro.plugin.modeling.core.schedule.resource.ResourceKey;
+import top.kzre.krro.plugin.modeling.core.viewport.ViewportMath;
 import top.kzre.krro.util.math.KMath;
 import top.kzre.krro.util.tile.TiledCanvas;
 
@@ -45,18 +46,21 @@ public final class GLStudioSceneRenderer implements SceneRenderer {
         return Collections.singleton(cornerPositions);
     }
 
+
+
+
     @Override
     public void render(Session session) {
         GLStudioRendererScheduleSession studioSession = (GLStudioRendererScheduleSession) session;
         GLRenderer renderer = studioSession.getRenderer();
-
+        float[] viewProjMat4 = studioSession.getViewProjMat4();
         ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>> cornerPositions = this.cornerPositions.value();
         List<RenderableMesh> meshes = prepare(cornerPositions);
         CompletableFuture<TiledCanvas> future = renderer.render(RenderRequest.builder()
                 .objects(meshes)
                 .viewHeight(studioSession.getHeight())
                 .viewWidth(studioSession.getWidth())
-                .viewMat4(KMath.mat4Identity())
+                .viewMat4(viewProjMat4)
                 .build()
         );
         future.handle((v, e)->{
@@ -75,44 +79,20 @@ public final class GLStudioSceneRenderer implements SceneRenderer {
     }
 
     private List<RenderableMesh> prepare(
-            ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>> cornerPositions) {
-        List<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>> list =
-                cornerPositions.items().getSnapshot().getList();
+            ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>> cornerPositions){
+        List<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>> list = cornerPositions.items().getSnapshot().getList();
         List<RenderableMesh> result = new ArrayList<>();
-        int index = 0;
         for (CopyOnWriteObject<ListResource<CopyOnWriteFloats>> c : list) {
-            if (c == null) continue;
-            result.add(new RenderableMesh(
-                    new DefaultCopyOnWriteObject<>(new ListResource<>(c.getSnapshot().getList())),
-                    mockModelMatrix(index++)   // ← 换成非 identity
-            ));
+            // 跳过空洞
+            if (c == null) {
+                continue;
+            }
+            // 不shared，资源不属于实际的渲染器
+            result.add(new RenderableMesh(new DefaultCopyOnWriteObject<>(
+                    new ListResource<>(c.getSnapshot().getList())
+            ),  KMath.mat4Identity()));
         }
+
         return result;
-    }
-
-    /**
-     * mock 模型矩阵——列主序 float[16]。
-     *
-     * <p>绕 Y 轴旋转 {@code 30° * index}，缩放 1.5，沿 X 平移 {@code index * 3}，
-     * Z 方向拉到 {@code -5}（相机在 {@code (0, 0, -5.5)} 看向 -Z）。
-     * 正式版从场景节点的 transform 来。
-     */
-    private static float[] mockModelMatrix(int index) {
-        double angle = Math.toRadians(30.0 * index);
-        float c = (float) Math.cos(angle);
-        float s = (float) Math.sin(angle);
-        float scale = 1.5f;
-        float tx = index * 3.0f;
-        float tz = -5.0f;
-
-        // 列主序：第 0 列 = (scale*c, 0, scale*s, 0)
-        //         第 2 列 = (-scale*s, 0, scale*c, 0)
-        //         第 3 列 = (tx, 0, tz, 1)
-        return new float[] {
-                scale * c,  0f,        scale * s,  0f,
-                0f,         scale,     0f,         0f,
-                -scale * s,  0f,        scale * c,  0f,
-                tx,         0f,        tz,         1f
-        };
     }
 }
