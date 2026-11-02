@@ -360,4 +360,37 @@ public final class ViewportMath {
         out[0] = (float) azimuth;
         out[1] = (float) elevation;
     }
+
+    // ========================================================================
+// 缩放（dolly）辅助
+// ========================================================================
+
+    /**
+     * 指数缩放（dolly）。value' = max(value · exp(-delta · k), minValue)。
+     *
+     * <p>delta 的语义：正值表示放大（value 减小），负值表示缩小（value 增大）。
+     * 调用方负责把不同输入的符号统一到「正 = 放大」：
+     * <ul>
+     *   <li>滚轮：delta = wheelDelta（约定向上滚为正）</li>
+     *   <li>拖拽：delta = -dy（屏幕 y 向下为正，向上拖 dy&lt;0，取负得正 = 放大）</li>
+     * </ul>
+     *
+     * <p>指数映射而非线性：缩放手感在尺度上均匀，不会因为当前 distance
+     * 大小导致快慢不一。每次缩放量按比例计算。
+     *
+     * <p>钳制：value 不能小于 minValue，防止 distance 退化到 0 导致视图矩阵
+     * 奇异，或 ortho-scale 退化到 0 导致投影矩阵奇异。
+     *
+     * <p>前置条件：value &gt; 0；minValue &gt; 0。
+     *
+     * @param value    当前值（distance 或 ortho-scale）
+     * @param delta    缩放增量，正 = 放大
+     * @param k        灵敏度，每单位 delta 的指数系数
+     * @param minValue 钳制下限，必须为正
+     * @return 缩放后的值
+     */
+    public static double dollyScaled(double value, double delta, double k, double minValue) {
+        double scaled = value * Math.exp(-delta * k);
+        return Math.max(scaled, minValue);
+    }
 }
