@@ -11,7 +11,8 @@
      - :projection —— 投影方式 + 两套投影参数（切换时另一套保留不丢）
  "
   (:require [clojure.spec.alpha :as s]
-            [top.kzre.krro.core.frame :as frame]))
+            [top.kzre.krro.core.frame :as frame])
+  (:import (top.kzre.krro.plugin.modeling.core.viewport ViewportMath)))
 
 ;; ============================================================================
 ;; 轨道参数（FREE_ORBIT 模式）
@@ -37,8 +38,9 @@
   ;; 不能到 ±π/2：极点上方位角失去意义，球坐标退化，视图矩阵奇异。
   ;; 留 1e-6 余量而非闭区间，避免浮点边界恰好落在奇异点上。
   (s/and double?
-         #(<= (- 1e-6 (/ Math/PI 2)) %)     ; 下界 -π/2 + ε
-         #(<= % (- (/ Math/PI 2) 1e-6))))   ; 上界  π/2 - ε
+         #(<= (- ViewportMath/ELEVATION_LIMIT) %)
+         #(<= % ViewportMath/ELEVATION_LIMIT)))   ; 上界  π/2 - ε
+
 
 (s/def ::orbit
   ;; 轨道相机的完整参数组。四个字段缺一不可——推导视图矩阵需要全部。

@@ -4,10 +4,21 @@
 
 
 (defmethod dispatch/tool-event :viewport
-  [_ event-map]
-  (case (:type event-map)
-    :press :viewport-pan/press
-    :drag :viewport-pan/drag
-    :scroll :viewport-pan/scroll
-    :release :viewport-pan/release
-    nil))
+  [_ {:keys [ mouse-button type]}]
+  (case mouse-button
+    :middle
+    (case type
+      :press :viewport-pan/press
+      :drag :viewport-pan/drag
+      :scroll :viewport-pan/scroll
+      :release :viewport-pan/release
+      nil)
+    :left
+    (case type
+      :press :viewport-orbit/press
+      :drag :viewport-orbit/drag
+      :scroll :viewport-orbit/scroll
+      :release :viewport-orbit/release
+      nil)
+    nil)
+  )

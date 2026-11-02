@@ -5,11 +5,12 @@
     [top.kzre.krro.plugin.modeling.core.viewport.effects]
     [top.kzre.krro.plugin.modeling.core.viewport.spec]
     [top.kzre.krro.plugin.modeling.core.viewport.frame]
-    [top.kzre.krro.plugin.modeling.core.viewport.event.pan]))
+    [top.kzre.krro.plugin.modeling.core.viewport.event.pan]
+    [top.kzre.krro.plugin.modeling.core.viewport.event.orbit]))
 
 (re-export
   [top.kzre.krro.plugin.modeling.core.viewport.frame
-   :refer [get-viewport set-viewport! viewport-key]])
+   :refer [get-viewport set-viewport! ]])
 
 (re-export
   [top.kzre.krro.plugin.modeling.core.viewport.math

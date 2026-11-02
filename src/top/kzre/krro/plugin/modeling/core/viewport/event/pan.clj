@@ -5,9 +5,6 @@
   不产生指令。计算全部委托 ViewportMath；本命名空间只做解构、坐标差、
   调 Java、回写。
 
-  瞬态策略：press 记录起点屏幕坐标 + 起始 target；drag 基于起点重算总位移
-  （绝对式，无累积误差）；release 清空。
-
   前提：
     - frame 是带 :height（视口像素高度）的上下文，由输入层提供；
     - viewport/set-viewport! 负责写 db、重算 viewProj、推送给 Session，
@@ -88,6 +85,4 @@
 (rf/reg-event-fx
   scene/app-id :viewport-pan/release
   (fn [cofx [_ _scene-id _event-map _frame]]
-    ;; 清理瞬态。幂等：非拖拽状态收到 release 不报错。
-    (let [record (:record cofx)]
-      {:record (assoc record (tool/tool-date-key) nil)})))
+    nil))

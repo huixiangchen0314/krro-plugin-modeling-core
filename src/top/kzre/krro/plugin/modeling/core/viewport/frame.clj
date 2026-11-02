@@ -18,8 +18,10 @@
 
   get-viewport 在未设置时返回新构造的默认视口（不存储）。任何修改视口的
   调用方必须显式 set-viewport! ——读默认值不产生持久状态。"
-  (:require [top.kzre.krro.core.frame :as frame]
-            [top.kzre.krro.plugin.modeling.core.viewport.spec :as spec]))
+  (:require
+   [top.kzre.krro.core.frame :as frame :refer [IFrame]]
+   [top.kzre.krro.plugin.modeling.core.viewport.spec :as spec])
+  )
 
 ;; ============================================================================
 ;; 键定义
@@ -29,17 +31,19 @@
 (def ^:private viewport-width-key*  ::viewport-width)
 (def ^:private viewport-height-key* ::viewport-height)
 
-(defn viewport-key [] viewport-key*)
 
 ;; ============================================================================
 ;; 视口状态
 ;; ============================================================================
 
 (defn get-viewport
-  "返回 frame 上的视口状态。未设置时返回新构造的默认视口，不存储。
+  "返回 frame-or-map 上的视口状态。未设置时返回新构造的默认视口，不存储。
    需要持久化的修改必须跟 set-viewport!。"
-  [frame]
-  (or (frame/param frame viewport-key*)
+  [frame-or-map]
+  {:pre [(some? frame-or-map)]}
+  (or (if (satisfies? IFrame frame-or-map)
+        (frame/param frame-or-map viewport-key*)
+        (get frame-or-map viewport-key*))
       (spec/make-viewport)))
 
 (defn set-viewport!
@@ -47,35 +51,3 @@
   [frame viewport]
   {:pre [(some? viewport)]}
   (frame/set-param! frame viewport-key* viewport))
-
-;; ============================================================================
-;; 视口尺寸
-;; ============================================================================
-
-(defn get-viewport-width
-  "返回视口宽度（像素）。未设置时返回 nil。"
-  [frame]
-  (frame/param frame viewport-width-key*))
-
-(defn get-viewport-height
-  "返回视口高度（像素）。未设置时返回 nil。"
-  [frame]
-  (frame/param frame viewport-height-key*))
-
-(defn set-viewport-size!
-  "同时存储视口宽度与高度。两个值必须原子更新——分开写会产生
-   新 width + 旧 height 的中间态，导致 aspect 短暂错误。"
-  [frame width height]
-  {:pre [(pos? width) (pos? height)]}
-  (frame/set-param! frame viewport-width-key* width)
-  (frame/set-param! frame viewport-height-key* height))
-
-(defn get-aspect
-  "返回 aspect = width / height。宽度或高度未设置、或高度为 0 时返回 nil。
-   nil 表示视口尺寸未就绪——调用方（如矩阵计算）应跳过本帧计算，
-   而不是用默认值兜底（默认 1.0 会产生视觉畸变且难排查）。"
-  [frame]
-  (when-let [w (get-viewport-width frame)]
-    (when-let [h (get-viewport-height frame)]
-      (when (pos? h)
-        (/ (double w) (double h))))))

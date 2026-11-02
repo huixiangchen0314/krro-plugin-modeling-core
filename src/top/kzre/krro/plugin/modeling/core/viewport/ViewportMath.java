@@ -15,6 +15,12 @@ public final class ViewportMath {
     }
 
     /**
+     * 仰角钳制的绝对值上限（π/2 - ε）。spec 里的 ::elevation 范围
+     * 与 orbitAngles 的钳制共用这一个常量，避免两处硬编码不一致。
+     */
+    public static final double ELEVATION_LIMIT = Math.PI / 2 - 1e-6;
+
+    /**
      * 视图矩阵（世界空间 → 相机空间），写入 out。
      *
      * <pre>
@@ -274,5 +280,55 @@ public final class ViewportMath {
         outDelta[0] = (float) (cosA * sx + (-sinA * sinE) * sy);
         outDelta[1] = (float) (cosE * sy);
         outDelta[2] = (float) (-sinA * sx + (-cosA * sinE) * sy);
+    }
+
+    // ========================================================================
+// 旋转（orbit）辅助
+// ========================================================================
+
+
+    /**
+     * 轨道旋转：从起始角度出发，按屏幕位移计算新的方位角与仰角。
+     * 结果写入 out（长度 &gt;= 2，out[0]=azimuth，out[1]=elevation）。
+     *
+     * <p>绝对式：从 press 时的起始角度重算总增量，不是从上一帧结果累加。
+     * 鼠标事件丢帧时仍然正确。
+     *
+     * <pre>
+     *   azimuth   = startAzimuth   - dx · sensitivity
+     *   elevation = startElevation + dy · sensitivity
+     *   elevation = clamp(elevation, -ELEVATION_LIMIT, +ELEVATION_LIMIT)
+     * </pre>
+     *
+     * <p>符号约定（内容跟随鼠标，与 Blender 一致）：
+     * <ul>
+     *   <li>dx &gt; 0（鼠标右拖）→ azimuth 减小 → 相机向左绕 → 物体看起来右转</li>
+     *   <li>dy &gt; 0（鼠标下拖）→ elevation 增大 → 相机上移 → 看到物体顶部</li>
+     * </ul>
+     *
+     * <p>azimuth 不钳制——方位角周期 2π，无界不影响视图矩阵。
+     * elevation 必须钳制，避免球坐标在极点退化（cosE → 0）。
+     *
+     * <p>前置条件：startElevation 已在合法范围内（spec 保证）；
+     * out.length &gt;= 2。
+     *
+     * @param startAzimuth   press 时的方位角，弧度
+     * @param startElevation press 时的仰角，弧度
+     * @param dx             屏幕 x 位移，像素（相对 press 起点）
+     * @param dy             屏幕 y 位移，像素，向下为正
+     * @param sensitivity    灵敏度，弧度/像素
+     * @param out            输出数组，长度 &gt;= 2
+     */
+    public static void orbitAngles(
+            double startAzimuth, double startElevation,
+            double dx, double dy,
+            double sensitivity,
+            float[] out) {
+        double azimuth   = startAzimuth - dx * sensitivity;
+        double elevation = startElevation + dy * sensitivity;
+        if (elevation > ELEVATION_LIMIT)  elevation = ELEVATION_LIMIT;
+        if (elevation < -ELEVATION_LIMIT) elevation = -ELEVATION_LIMIT;
+        out[0] = (float) azimuth;
+        out[1] = (float) elevation;
     }
 }
