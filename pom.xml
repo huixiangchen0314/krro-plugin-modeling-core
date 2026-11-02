@@ -33,5 +33,10 @@
             <artifactId>krro-d3</artifactId>
             <version>0.1.0</version>
         </dependency>
+        <dependency>
+            <groupId>top.kzre</groupId>
+            <artifactId>krro-d3-renderer-studio-gl</artifactId>
+            <version>0.1.0</version>
+        </dependency>
     </dependencies>
 </project>

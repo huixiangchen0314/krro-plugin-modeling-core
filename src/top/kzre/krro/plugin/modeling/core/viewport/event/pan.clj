@@ -5,10 +5,23 @@
   不产生指令。计算全部委托 ViewportMath；本命名空间只做解构、坐标差、
   调 Java、回写。
 
+  语义：内容跟随鼠标（抓住世界拖动），相机沿反方向平移。
+  :camera-view 模式下不响应（与 orbit 一致）。
+
+  瞬态策略：绝对式。press 记录起点屏幕坐标 + 起始 target；drag 基于起点
+  重算总位移，不从上一帧累加——鼠标事件丢帧时仍然正确。
+
+  pan 用绝对式而 orbit 用增量式，因为 pan 不改变 flipped?（不越过极点），
+  绝对式的起始 target 始终有效；orbit 的 flipped? 会在拖拽中 toggle，
+  必须增量式。数据特性不同，不必强求一致。
+
+  flipped? 的影响：panDelta 用 right/up 算世界位移，viewMat4 在 flipped?
+  时翻转 right/up，所以 panDelta 也必须传 flipped?，否则 flip 状态下
+  pan 方向会反。pan 本身不改变 flipped?，从当前视口状态读即可。
+
   前提：
-    - frame 是带 :height（视口像素高度）的上下文，由输入层提供；
-    - viewport/set-viewport! 负责写 db、重算 viewProj、推送给 Session，
-      本 handler 只给出新的视口状态。"
+    - frame 是带视口尺寸的上下文，由输入层提供；
+    - viewport/set-frame-viewport 负责写 db、重算 viewProj、推送给 Session。"
   (:require
     [top.kzre.krro.core.reframe.core :as rf]
     [top.kzre.krro.plugin.modeling.core.project.scene :as scene]
@@ -68,10 +81,13 @@
                           (double (get-in vp [:orthographic :ortho-scale]))
                           h))
                   delta (float-array 3)]
-              ;; 屏幕位移 → 世界位移（内容跟随鼠标）
+              ;; 屏幕位移 → 世界位移（内容跟随鼠标）。
+              ;; flipped? 必须传：viewMat4 在 flip 时翻转了 right/up，
+              ;; panDelta 不跟着翻，flip 状态下 pan 方向会反。
               (ViewportMath/panDelta
                 (double (get-in vp [:orbit :azimuth]))
                 (double (get-in vp [:orbit :elevation]))
+                (boolean (get-in vp [:orbit :flipped?]))
                 (double dx) (double dy) wpp
                 delta)
               ;; 新 target = 起始 target + 世界位移，回写视口

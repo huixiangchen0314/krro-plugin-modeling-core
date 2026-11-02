@@ -9,11 +9,12 @@
   (when-not (= :free-orbit (:mode viewport))
     (throw (ex-info "viewport->view-mat4 only supports :free-orbit"
                     {:mode (:mode viewport)})))
-  (let [{:keys [target distance azimuth elevation]} (:orbit viewport)
+  (let [{:keys [target distance azimuth elevation flipped?]} (:orbit viewport)
         [tx ty tz] target]
     (ViewportMath/viewMat4
       (double tx) (double ty) (double tz)
       (double distance) (double azimuth) (double elevation)
+      (boolean flipped?)
       ^floats mat4)
     mat4))
 

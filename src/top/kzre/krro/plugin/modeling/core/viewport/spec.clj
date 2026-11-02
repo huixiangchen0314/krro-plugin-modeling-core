@@ -10,8 +10,7 @@
      - :orbit      —— 轨道相机参数（FREE_ORBIT 模式使用；CAMERA_VIEW 时保留不丢）
      - :projection —— 投影方式 + 两套投影参数（切换时另一套保留不丢）
  "
-  (:require [clojure.spec.alpha :as s]
-            [top.kzre.krro.core.frame :as frame])
+  (:require [clojure.spec.alpha :as s])
   (:import (top.kzre.krro.plugin.modeling.core.viewport ViewportMath)))
 
 ;; ============================================================================
@@ -33,6 +32,7 @@
   ;; 绕世界 Y 轴的方位角，弧度，无界（周期 2π，由推导函数取模）。
   double?)
 
+
 (s/def ::elevation
   ;; 仰角，弧度，范围开区间 (-π/2, π/2)。
   ;; 不能到 ±π/2：极点上方位角失去意义，球坐标退化，视图矩阵奇异。
@@ -41,10 +41,14 @@
          #(<= (- ViewportMath/ELEVATION_LIMIT) %)
          #(<= % ViewportMath/ELEVATION_LIMIT)))   ; 上界  π/2 - ε
 
+(s/def ::flipped?
+  ;; 俯仰角翻转，为了方便的处理球坐标极点越过回绕
+  boolean?)
+
 
 (s/def ::orbit
   ;; 轨道相机的完整参数组。四个字段缺一不可——推导视图矩阵需要全部。
-  (s/keys :req-un [::target ::distance ::azimuth ::elevation]))
+  (s/keys :req-un [::target ::distance ::azimuth ::elevation ::flipped?]))
 
 ;; ============================================================================
 ;; 投影参数
@@ -132,7 +136,8 @@
    :orbit        {:target    [0.0 0.0 0.0]
                   :distance  10.0
                   :azimuth   0.0
-                  :elevation 0.0}
+                  :elevation 0.0
+                  :flipped? false}
    :projection   :perspective
    :perspective  {:fov-y (/ Math/PI 4)          ; 45°
                   :near  0.1
