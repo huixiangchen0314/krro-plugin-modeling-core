@@ -7,14 +7,7 @@
 
 (defmulti tool-event
           (fn [current-tool event-map]
-            (or current-tool :viewport)
-            ;(if (and (= :pointer (:device-type event-map))
-            ;         (= :middle (:mouse-button event-map)))
-            ;  ;; 鼠标中键是视口工具
-            ;  (let [ret :viewport]
-            ;    ret)
-            ;  current-tool)
-            ))
+            current-tool))
 
 (defmethod tool-event :default [_ _] nil)
 

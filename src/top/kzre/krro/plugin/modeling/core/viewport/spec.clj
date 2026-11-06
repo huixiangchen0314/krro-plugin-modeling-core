@@ -32,23 +32,18 @@
   ;; 绕世界 Y 轴的方位角，弧度，无界（周期 2π，由推导函数取模）。
   double?)
 
-
 (s/def ::elevation
-  ;; 仰角，弧度，范围开区间 (-π/2, π/2)。
-  ;; 不能到 ±π/2：极点上方位角失去意义，球坐标退化，视图矩阵奇异。
-  ;; 留 1e-6 余量而非闭区间，避免浮点边界恰好落在奇异点上。
+  ;; 仰角，弧度，范围闭区间 [-ELEVATION_LIMIT, ELEVATION_LIMIT]。
+  ;; 上下界均为 π/2 - ε（留 1e-6 余量而非闭区间到 π/2），
+  ;; 避免浮点边界恰好落在奇异点上。orbitAnglesClamped 把 elevation 钳制在此范围内——
+  ;; 相机永不倒置，因此不需要 flipped 状态。
   (s/and double?
          #(<= (- ViewportMath/ELEVATION_LIMIT) %)
-         #(<= % ViewportMath/ELEVATION_LIMIT)))   ; 上界  π/2 - ε
-
-(s/def ::flipped?
-  ;; 俯仰角翻转，为了方便的处理球坐标极点越过回绕
-  boolean?)
-
+         #(<= % ViewportMath/ELEVATION_LIMIT)))
 
 (s/def ::orbit
-  ;; 轨道相机的完整参数组。四个字段缺一不可——推导视图矩阵需要全部。
-  (s/keys :req-un [::target ::distance ::azimuth ::elevation ::flipped?]))
+  ;; 轨道相机的完整参数组。三个字段缺一不可——推导视图矩阵需要全部。
+  (s/keys :req-un [::target ::distance ::azimuth ::elevation]))
 
 ;; ============================================================================
 ;; 投影参数
@@ -136,8 +131,7 @@
    :orbit        {:target    [0.0 0.0 0.0]
                   :distance  10.0
                   :azimuth   0.0
-                  :elevation 0.0
-                  :flipped? false}
+                  :elevation 0.0}
    :projection   :perspective
    :perspective  {:fov-y (/ Math/PI 4)          ; 45°
                   :near  0.1
@@ -148,4 +142,3 @@
 
 (defn make-viewport []
   default-viewport*)
-

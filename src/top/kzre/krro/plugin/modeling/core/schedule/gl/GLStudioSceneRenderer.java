@@ -1,6 +1,8 @@
 package top.kzre.krro.plugin.modeling.core.schedule.gl;
 
 import top.kzre.krro.canvas.gl.resource.PixelFormat;
+import top.kzre.krro.d3.core.util.LongIntMap;
+import top.kzre.krro.d3.core.util.ResourceUtils;
 import top.kzre.krro.d3.core.util.cow.*;
 import top.kzre.krro.d3.renderer.studio.gl.GLRenderFlyweight;
 import top.kzre.krro.d3.renderer.studio.gl.GLRenderer;
@@ -16,21 +18,19 @@ import top.kzre.krro.plugin.modeling.core.viewport.ViewportMath;
 import top.kzre.krro.util.math.KMath;
 import top.kzre.krro.util.tile.TiledCanvas;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 public final class GLStudioSceneRenderer implements SceneRenderer {
-    // 渲染器持有 flyweight, 调度VBO，GC 用pack GC 管理
-    private final GLRenderFlyweight flyweight;
-    ResourceKey<ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>>>
-            cornerPositions = Geometry.cornerPositions();
 
-    /**
-     * 全局共享一个 GL 计算享元
-     */
+    private final GLRenderFlyweight flyweight;
+
+    private final ResourceKey<ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>>>
+            cornerPositionsKey = Geometry.cornerPositions();
+
+    private final ResourceKey<ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteInts>>>>
+            triangleIndicesKey = Geometry.triangleIndices();
+
     public GLStudioSceneRenderer(GLRenderFlyweight flyweight) {
         this.flyweight = flyweight;
     }
@@ -43,19 +43,26 @@ public final class GLStudioSceneRenderer implements SceneRenderer {
 
     @Override
     public Set<ResourceKey<?>> getResourceKeys() {
-        return Collections.singleton(cornerPositions);
+        HashSet<ResourceKey<?>> result = new HashSet<>();
+        result.add(cornerPositionsKey);
+        result.add(triangleIndicesKey);
+        return result;
     }
-
-
-
 
     @Override
     public void render(Session session) {
         GLStudioRendererScheduleSession studioSession = (GLStudioRendererScheduleSession) session;
         GLRenderer renderer = studioSession.getRenderer();
         float[] viewProjMat4 = studioSession.getViewProjMat4();
-        ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>> cornerPositions = this.cornerPositions.value();
-        List<RenderableMesh> meshes = prepare(cornerPositions);
+
+        // 两个表的 value() 必须成对取——prepare 需要按索引对齐
+        ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>> posTable =
+                cornerPositionsKey.value();
+        ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteInts>>> idxTable =
+                triangleIndicesKey.value();
+
+        List<RenderableMesh> meshes = prepare(posTable, idxTable);
+
         CompletableFuture<TiledCanvas> future = renderer.render(RenderRequest.builder()
                 .objects(meshes)
                 .viewHeight(studioSession.getHeight())
@@ -63,34 +70,71 @@ public final class GLStudioSceneRenderer implements SceneRenderer {
                 .viewMat4(viewProjMat4)
                 .build()
         );
-        future.handle((v, e)->{
-            // 释放捕获资源
-            cornerPositions.close();
-            if (e == null) {
-                // 发送结果, 因为GL 是单线程排队的，所以这里一定有序的。
-                studioSession.sendView(v);
-            }else {
-                // 执行失败
-                System.err.println(e.getMessage());
+
+        future.handle((v, e) -> {
+            // 释放捕获资源——两个表都要关
+            try {
+                RuntimeException ignore = ResourceUtils.closeDelayError(posTable, idxTable);
+            } catch (RuntimeException closeEx) {
+                if (e == null) {
+                    e = closeEx;
+                } else {
+                    e.addSuppressed(closeEx);
+                }
             }
 
+            // 释放 prepare 构造的临时 COW 包装（底层 arena 由表释放，这里只清引用）
+            // TODO RenderableMesh 不是COW，资源不属于它
+            for (RenderableMesh mesh : meshes) {
+                try {
+                    mesh.close();
+                } catch (RuntimeException ignored) {
+                    // 渲染已完成，close 失败只影响 GC 时机，不影响正确性
+                }
+            }
+
+            if (e == null) {
+                studioSession.sendView(v);
+            } else {
+                System.err.println(e.getMessage());
+            }
             return v;
         });
     }
 
+    /**
+     * 把两个资源表按索引配对为 {@link RenderableMesh} 列表。
+     *
+     * <p>两个表由 {@link #getResourceKeys()} 声明，调度层保证它们按
+     * 同一资源 id 对齐——索引 i 处的 positions 与 indices 属于同一
+     * 几何体。任一为 null 视为空洞，跳过。
+     *
+     * <p>用 {@code new DefaultCopyOnWriteObject<>(new ListResource<>(...))}
+     * 包装 snapshot——不 shared 原始 COW：renderer 对 COW 的引用不应
+     * 影响原始资源的生命周期，原始表的 close 由 {@link #render} 的
+     * future 回调统一负责。
+     */
     private List<RenderableMesh> prepare(
-            ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>> cornerPositions){
-        List<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>> list = cornerPositions.items().getSnapshot().getList();
+            ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>> posTable,
+            ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteInts>>> idxTable) {
         List<RenderableMesh> result = new ArrayList<>();
-        for (CopyOnWriteObject<ListResource<CopyOnWriteFloats>> c : list) {
-            // 跳过空洞
-            if (c == null) {
+
+        Iterator<LongIntMap.MapEntry> iterator = posTable.indexMap().getSnapshot().getMap().iterator();
+        while (iterator.hasNext()) {
+            LongIntMap.MapEntry entry = iterator.next();
+            long objId = entry.getKey();
+            CopyOnWriteObject<ListResource<CopyOnWriteFloats>> pos = posTable.get(objId);
+            CopyOnWriteObject<ListResource<CopyOnWriteInts>> idx = idxTable.get(objId);
+            // 跳过空洞——任一为 null 视为该资源缺失
+            if (pos == null || idx == null) {
                 continue;
             }
-            // 不shared，资源不属于实际的渲染器
-            result.add(new RenderableMesh(new DefaultCopyOnWriteObject<>(
-                    new ListResource<>(c.getSnapshot().getList())
-            ),  KMath.mat4Identity()));
+            result.add(new RenderableMesh(
+                    new DefaultCopyOnWriteObject<>(
+                            new ListResource<>(pos.getSnapshot().getList())),
+                    new DefaultCopyOnWriteObject<>(
+                            new ListResource<>(idx.getSnapshot().getList())),
+                    KMath.mat4Identity()));
         }
 
         return result;

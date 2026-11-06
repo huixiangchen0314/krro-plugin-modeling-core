@@ -54,3 +54,10 @@
           (stop-fn)
           (swap! record-data dissoc scene-id)
           (log/info "unregistered store for scene-id:" scene-id))))))
+
+
+(defn scene-accel [record]
+  (:scene-accel record))
+
+(defn subscribe [& args]
+  (apply rf/subscribe app-id args))

@@ -1,7 +1,9 @@
 (ns top.kzre.krro.plugin.modeling.core.viewport.math
   "视口状态 → 矩阵的入口。检查与解构在 Clojure，数值计算委托 ViewportMath。
    仅支持 :free-orbit；:camera-view 直接抛异常。"
-  (:import [top.kzre.krro.plugin.modeling.core.viewport ViewportMath]))
+  (:import
+    [top.kzre.krro.plugin.modeling.core.viewport ViewportMath]
+    [top.kzre.krro.util.math KMath]))
 
 (defn viewport->view-mat4
   "视口状态 → 视图矩阵，写入 mat4（float[16]，列主序）。"
@@ -9,12 +11,11 @@
   (when-not (= :free-orbit (:mode viewport))
     (throw (ex-info "viewport->view-mat4 only supports :free-orbit"
                     {:mode (:mode viewport)})))
-  (let [{:keys [target distance azimuth elevation flipped?]} (:orbit viewport)
+  (let [{:keys [target distance azimuth elevation]} (:orbit viewport)
         [tx ty tz] target]
     (ViewportMath/viewMat4
       (double tx) (double ty) (double tz)
       (double distance) (double azimuth) (double elevation)
-      (boolean flipped?)
       ^floats mat4)
     mat4))
 
@@ -38,3 +39,12 @@
         (ViewportMath/orthographicProjMat4
           (double ortho-scale) (double near) (double far) aspect ^floats mat4)))
     mat4))
+
+(defn viewport->view-proj-mat4 [vp]
+  (KMath/mat4Mul
+    (viewport->proj-mat4 vp (float-array 16))
+    (viewport->view-mat4 vp (float-array 16))))
+
+(defn viewport->view-proj-inv [vp]
+  (KMath/mat4Inv
+    (viewport->view-proj-mat4 vp)))

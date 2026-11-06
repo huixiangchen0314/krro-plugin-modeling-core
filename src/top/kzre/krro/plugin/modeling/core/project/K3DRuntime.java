@@ -19,14 +19,14 @@ public final class K3DRuntime {
         if (impl != null) throw new IllegalStateException("K3DRuntime already initialized");
         impl = base;
         Runtime.getRuntime()
-                .addShutdownHook(new Thread(K3DRuntime::close,
+                .addShutdownHook(new Thread(K3DRuntime::shutdown,
                         "k3d-runtime-shutdown"));
     }
 
     /** 关闭当前实现。幂等。关闭后所有静态方法抛 IllegalStateException。 */
-    private static synchronized void close() {
+    private static synchronized void shutdown() {
         K3DRuntimeBase base = impl;
-        if (base != null) base.close();
+        if (base != null) base.shutdown();
         // 不置 null：进程级单例，关闭即终态，不可重建
     }
 

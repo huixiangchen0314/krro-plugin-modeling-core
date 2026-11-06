@@ -24,12 +24,15 @@
   前提：
     - viewport/set-frame-viewport 负责写 db、重算 viewProj、推送给 Session。"
   (:require
-    [top.kzre.krro.core.reframe.core :as rf]
-    [top.kzre.krro.plugin.modeling.core.project.scene :as scene]
-    [top.kzre.krro.plugin.painting.core.edit.tool :as tool :refer [cleanup-tool-interceptor]]
-    [top.kzre.krro.plugin.modeling.core.viewport.frame :as frame])
+   [top.kzre.krro.core.reframe.core :as rf]
+   [top.kzre.krro.plugin.modeling.core.project.scene :as scene]
+   [top.kzre.krro.plugin.modeling.core.viewport.frame :as frame]
+   [top.kzre.krro.plugin.modeling.core.viewport.math :as math]
+   [top.kzre.krro.plugin.painting.core.edit.tool :as tool :refer [cleanup-tool-interceptor]])
   (:import
-    [top.kzre.krro.plugin.modeling.core.viewport ViewportMath]))
+   (top.kzre.krro.plugin.modeling.core.project.accel RayAccel)
+   [top.kzre.krro.plugin.modeling.core.viewport ScreenTransform ViewportMath]
+   (top.kzre.krro.util.math KMath)))
 
 ;; 瞬态工具状态。只记上一帧屏幕坐标——增量式，下一帧的增量从它算，
 ;; 之后立刻用新坐标替换。不记角度：角度从当前视口状态读，这样
@@ -53,10 +56,13 @@
       {:record (assoc record (tool/tool-date-key)
                              (->OrbitToolData x y))})))
 
+;; 这个缩放方式一般用于更加精细的调整，缩放倍数不是固定 1.2倍，而是 float 精度
 (rf/reg-event-fx
   scene/app-id :viewport-orbit/drag
   [(cleanup-tool-interceptor OrbitToolData)]
-  (fn [cofx [_ _scene-id event-map frame
+  (fn [cofx [_ _scene-id
+             {:keys [x y ]
+              :as event-map} frame
              ;; 再后续的参数整合成map传递
              {:keys [view-height]}]]
     (let [record (:record cofx)
@@ -73,10 +79,9 @@
                   ;; 拖拽一个视口高度旋转一圈
                   sensitivity (/ (* 2 Math/PI) view-height)
                   ;; 从当前角度 + 当前 flipped? 出发，增量式
-                  flipped? (ViewportMath/orbitAngles
+                  flipped? (ViewportMath/orbitAnglesClamped
                              (double (get-in vp [:orbit :azimuth]))
                              (double (get-in vp [:orbit :elevation]))
-                             (boolean (get-in vp [:orbit :flipped?]))
                              (double dx) (double dy) sensitivity
                              az-el)
                   vp' (-> vp

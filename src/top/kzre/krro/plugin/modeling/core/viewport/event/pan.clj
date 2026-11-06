@@ -87,7 +87,6 @@
               (ViewportMath/panDelta
                 (double (get-in vp [:orbit :azimuth]))
                 (double (get-in vp [:orbit :elevation]))
-                (boolean (get-in vp [:orbit :flipped?]))
                 (double dx) (double dy) wpp
                 delta)
               ;; 新 target = 起始 target + 世界位移，回写视口

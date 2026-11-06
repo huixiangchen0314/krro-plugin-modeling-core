@@ -9,6 +9,9 @@ import java.util.Arrays;
  * 不依赖 Clojure 数据结构——Clojure 侧的 viewport->view-mat4 负责解构 map 后调用这里。
  *
  * <p>矩阵约定：列主序，m[12..14] 为平移列。右手系，Y-up，相机朝向 -Z。
+ *
+ * <p><b>相机永不倒置</b>：elevation 被 clamp 在 (-π/2, π/2) 内，
+ * 不存在越过极点的状态，因此不需要 flipped 参数，right/up 恒用标准公式。
  */
 public final class ViewportMath {
     private ViewportMath() {
@@ -16,7 +19,7 @@ public final class ViewportMath {
 
     /**
      * 仰角钳制的绝对值上限（π/2 - ε）。spec 里的 ::elevation 范围
-     * 与 orbitAngles 的钳制共用这一个常量，避免两处硬编码不一致。
+     * 与 orbitAnglesClamped 的钳制共用这一个常量，避免两处硬编码不一致。
      */
     public static final double ELEVATION_LIMIT = Math.PI / 2 - 1e-6;
 
@@ -51,7 +54,7 @@ public final class ViewportMath {
     public static void viewMat4(
             double tx, double ty, double tz,
             double distance,
-            double azimuth, double elevation, boolean flipped,
+            double azimuth, double elevation,
             float[] out) {
         final double cosA = Math.cos(azimuth);
         final double sinA = Math.sin(azimuth);
@@ -62,10 +65,9 @@ public final class ViewportMath {
         final double ey = ty + distance * sinE;
         final double ez = tz + distance * cosE * cosA;
 
-        final double s  = flipped ? -1.0 : 1.0;
-        final double rx =  s * cosA,          ry = 0.0,       rz = s * -sinA;
-        final double ux =  s * -sinA * sinE,  uy = s * cosE,  uz = s * -cosA * sinE;
-        final double fx = -cosE * sinA,       fy = -sinE,     fz = -cosE * cosA;
+        final double rx = cosA,          ry = 0.0,     rz = -sinA;
+        final double ux = -sinA * sinE,  uy = cosE,    uz = -cosA * sinE;
+        final double fx = -cosE * sinA,  fy = -sinE,   fz = -cosE * cosA;
 
         final double m12 = -(rx * ex + ry * ey + rz * ez);
         final double m13 = -(ux * ex + uy * ey + uz * ez);
@@ -159,7 +161,6 @@ public final class ViewportMath {
 
     /**
      * 列主序 4x4 viewProj。相机在 (0, 0, eyeZ) 看向 -Z。
-     *
      */
     public static float[] aspectViewProjMat4(int w, int h, double fovYDeg,
                                              float near, float far, float eyeZ) {
@@ -242,28 +243,19 @@ public final class ViewportMath {
      *
      * 屏幕位移 (dx, dy)（像素，dy 向下），世界位移：
      *   delta = right · (-dx · wpp) + up · (dy · wpp)
-     *
-     * 展开：
-     *   delta.x = -cosA·dx·wpp + (-sinA·sinE)·dy·wpp
-     *   delta.y =                  cosE·dy·wpp
-     *   delta.z =  sinA·dx·wpp + (-cosA·sinE)·dy·wpp
      * </pre>
-     *
-     * <p>符号说明：屏幕 y 向下、世界 y 向上，故 dy 直接乘 +up 即得“内容下移”；
-     * dx 乘 -right 即得“内容右移”。若需要“相机跟随鼠标”的反向语义，
-     * 调用方传入 (-dx, -dy)。
      *
      * <p>前置条件：elevation 严格在 (-π/2, π/2) 内（spec 保证）；outDelta.length &gt;= 3。
      *
-     * @param azimuth      绕 Y 轴方位角，弧度
-     * @param elevation    仰角，弧度
-     * @param dx           屏幕 x 位移，像素
-     * @param dy           屏幕 y 位移，像素（向下为正）
+     * @param azimuth       绕 Y 轴方位角，弧度
+     * @param elevation     仰角，弧度
+     * @param dx            屏幕 x 位移，像素
+     * @param dy            屏幕 y 位移，像素（向下为正）
      * @param worldPerPixel 每像素世界长度（由上面的 wpp 方法给出）
-     * @param outDelta     输出数组，长度 &gt;= 3
+     * @param outDelta      输出数组，长度 &gt;= 3
      */
     public static void panDelta(
-            double azimuth, double elevation, boolean flipped,
+            double azimuth, double elevation,
             double dx, double dy, double worldPerPixel,
             float[] outDelta) {
         final double cosA = Math.cos(azimuth);
@@ -271,99 +263,48 @@ public final class ViewportMath {
         final double cosE = Math.cos(elevation);
         final double sinE = Math.sin(elevation);
 
-        final double s  = flipped ? -1.0 : 1.0;
-        final double sx = -dx * worldPerPixel * s;
-        final double sy =  dy * worldPerPixel * s;
+        final double sx = -dx * worldPerPixel;
+        final double sy =  dy * worldPerPixel;
 
         outDelta[0] = (float) (cosA * sx + (-sinA * sinE) * sy);
         outDelta[1] = (float) (cosE * sy);
         outDelta[2] = (float) (-sinA * sx + (-cosA * sinE) * sy);
     }
 
-    // ========================================================================
-// 旋转（orbit）辅助
-// ========================================================================
-
-
-
     /**
-     * 轨道旋转（增量式）。结果写入 out（长度 &gt;= 2）：
-     * out[0]=azimuth，out[1]=elevation。返回新的 flip 状态。
+     * 轨道旋转：极点钳制，永不越过。
      *
-     * <p>dx/dy 是相对上一帧的增量，不是相对 press 起点。每帧用当前 flipped
-     * 状态决定增量符号——flip 后 right/up 翻转，屏幕方向映射到世界方向取反，
-     * 不反转符号会导致拖动方向与画面相反。
+     * <p>拖拽映射是世界绝对的，不依赖任何翻转状态：
+     * 水平拖拽始终改变 azimuth，垂直拖拽始终改变 elevation。
+     * elevation 被 clamp 在 (-ELEVATION_LIMIT, ELEVATION_LIMIT) 内——
+     * 到极点停住，不反射、不翻转、不摇摆。
      *
-     * <p>增量式而非绝对式：flip 状态在拖拽中会 toggle，绝对式的固定
-     * startFlipped 无法处理跨越翻转点的情况。角度是标量，增量累积误差可忽略。
+     * <p>前置条件：sensitivity &gt; 0；out.length &gt;= 2。
      *
-     * <pre>
-     *   sign = flipped ? -1 : +1
-     *   azimuth   = azimuth   - dx · sensitivity · sign
-     *   elevation = elevation + dy · sensitivity · sign
-     *   回绕：越过 ELEVATION_LIMIT 反射 elevation、azimuth += π、toggle flip
-     *   azimuth 规约到 (-π, π]
-     * </pre>
-     *
-     * @param azimuth    当前方位角，弧度
-     * @param elevation  当前仰角，弧度
-     * @param flipped    当前 flip 状态
-     * @param dx         相对上一帧的屏幕 x 位移，像素
-     * @param dy         相对上一帧的屏幕 y 位移，像素，向下为正
-     * @param sensitivity 灵敏度，弧度/像素
-     * @param out        输出数组，长度 &gt;= 2
-     * @return 新的 flip 状态
-     */
-    public static boolean orbitAngles(
-            double azimuth, double elevation, boolean flipped,
-            double dx, double dy, double sensitivity,
-            float[] out) {
-        final double sign = flipped ? -1.0 : 1.0;
-        azimuth   -= dx * sensitivity * sign;
-        elevation += dy * sensitivity * sign;
-
-        while (elevation > ELEVATION_LIMIT) {
-            elevation = 2 * ELEVATION_LIMIT - elevation;
-            azimuth += Math.PI;
-            flipped = !flipped;
-        }
-        while (elevation < -ELEVATION_LIMIT) {
-            elevation = -2 * ELEVATION_LIMIT - elevation;
-            azimuth += Math.PI;
-            flipped = !flipped;
-        }
-
-        final double twoPi = 2 * Math.PI;
-        azimuth = azimuth % twoPi;
-        if (azimuth >  Math.PI) azimuth -= twoPi;
-        if (azimuth <= -Math.PI) azimuth += twoPi;
-
-        out[0] = (float) azimuth;
-        out[1] = (float) elevation;
-        return flipped;
-    }
-
-    /**
-     * 轨道旋转：极点截断
+     * @param azimuth   当前方位角，弧度
+     * @param elevation 当前仰角，弧度
+     * @param dx        屏幕 x 位移，像素
+     * @param dy        屏幕 y 位移，像素（向下为正）
+     * @param sensitivity 拖拽灵敏度，弧度/像素
+     * @param out       输出 [azimuth, elevation]，长度 &gt;= 2
      */
     public static void orbitAnglesClamped(
-            double azimuth, double elevation, boolean flipped,
+            double azimuth, double elevation,
             double dx, double dy,
             double sensitivity,
             float[] out) {
-        final double sign = flipped ? -1.0 : 1.0;
-        azimuth   -= dx * sensitivity * sign;
-        elevation += dy * sensitivity * sign;
+        azimuth   -= dx * sensitivity;
+        elevation += dy * sensitivity;
         // Clamp，不允许越过极点
-        if (elevation > ELEVATION_LIMIT)  elevation = ELEVATION_LIMIT;
+        if (elevation >  ELEVATION_LIMIT) elevation =  ELEVATION_LIMIT;
         if (elevation < -ELEVATION_LIMIT) elevation = -ELEVATION_LIMIT;
         out[0] = (float) azimuth;
         out[1] = (float) elevation;
     }
 
     // ========================================================================
-// 缩放（dolly）辅助
-// ========================================================================
+    // 缩放（dolly）辅助
+    // ========================================================================
 
     /**
      * 指数缩放（dolly）。value' = max(value · exp(-delta · k), minValue)。

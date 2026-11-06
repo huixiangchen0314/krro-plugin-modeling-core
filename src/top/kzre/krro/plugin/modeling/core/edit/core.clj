@@ -14,7 +14,7 @@
   (:require [top.kzre.krro.plugin.modeling.core.edit.dispatch :as dispatch]))
 
 
-(defmethod dispatch/tool-event :viewport
+(defmethod dispatch/tool-event :default
   [_ {:keys [mouse-button modifiers type] :as _event-map}]
   (let [{:keys [shift ctrl alt]} modifiers]
     (cond
@@ -49,5 +49,10 @@
         :release :viewport-orbit/release
         nil)
 
-      ;; 左键 / 右键：归工具或上下文菜单，不归视口导航
+      (= mouse-button :left)
+      (case type
+        ;; 左键点击单选
+        :release :object-select/select
+        nil)
+      ;; 左键 / 右键
       :else nil)))

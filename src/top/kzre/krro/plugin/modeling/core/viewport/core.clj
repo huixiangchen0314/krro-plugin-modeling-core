@@ -16,4 +16,6 @@
 (re-export
   [top.kzre.krro.plugin.modeling.core.viewport.math
    :refer [viewport->view-mat4
-           viewport->proj-mat4]])
+           viewport->proj-mat4
+           viewport->view-proj-mat4
+           viewport->view-proj-inv]])
