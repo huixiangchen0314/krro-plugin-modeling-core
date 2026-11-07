@@ -8,7 +8,7 @@ import top.kzre.krro.d3.renderer.gl.GLRenderFlyweight;
 import top.kzre.krro.d3.renderer.gl.GLStudioRenderContext;
 import top.kzre.krro.d3.renderer.resource.RenderInstance;
 import top.kzre.krro.d3.renderer.resource.SimpleMeshInstance;
-import top.kzre.krro.d3.renderer.studio.pipeline.RenderableMesh;
+import top.kzre.krro.plugin.modeling.core.schedule.SceneRenderContext;
 import top.kzre.krro.plugin.modeling.core.schedule.SceneRenderer;
 import top.kzre.krro.plugin.modeling.core.schedule.ScheduleSession;
 import top.kzre.krro.plugin.modeling.core.schedule.Session;
@@ -53,7 +53,7 @@ public final class GLStudioSceneRenderer implements SceneRenderer {
     }
 
     @Override
-    public void render(Session session) {
+    public void render(Session session, SceneRenderContext ctx) {
         GLStudioRendererScheduleSession studioSession = (GLStudioRendererScheduleSession) session;
         GLStudioPipeline pipeline = studioSession.getPipeline();
 
@@ -69,9 +69,10 @@ public final class GLStudioSceneRenderer implements SceneRenderer {
                 .setViewProjMat4(studioSession.getViewProjMat4())
                 .setViewSize(studioSession.getWidth(), studioSession.getHeight())
                 .setInstances(instances)
+                .setActiveInstanceId(ctx.getActiveObjectId())
                 .render();
 
-        future.handle((v, e) -> {
+        future.handle((canvas, e) -> {
             // 释放捕获资源——两个表都要关
             try {
                 // 资源不转移，仍然属于表
@@ -85,16 +86,15 @@ public final class GLStudioSceneRenderer implements SceneRenderer {
             }
 
             if (e == null) {
-                studioSession.sendView(v);
+                studioSession.sendView(canvas);
             } else {
                 System.err.println(e.getMessage());
             }
-            return v;
+            return canvas;
         });
     }
 
     /**
-     * 把两个资源表按索引配对为 {@link RenderableMesh} 列表。
      *
      * <p>两个表由 {@link #getResourceKeys()} 声明，调度层保证它们按
      * 同一资源 id 对齐——索引 i 处的 positions 与 indices 属于同一

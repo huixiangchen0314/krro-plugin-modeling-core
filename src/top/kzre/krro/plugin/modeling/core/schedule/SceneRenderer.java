@@ -16,5 +16,5 @@ public interface SceneRenderer extends SessionFactory{
     // TODO 场景渲染器配置，和渲染资源声明
     Set<ResourceKey<?>> getResourceKeys();
 
-    void render(Session cb);
+    void render(Session cb,SceneRenderContext ctx);
 }

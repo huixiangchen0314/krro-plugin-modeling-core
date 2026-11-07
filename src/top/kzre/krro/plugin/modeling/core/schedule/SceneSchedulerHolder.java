@@ -5,5 +5,4 @@ package top.kzre.krro.plugin.modeling.core.schedule;
  */
 public interface SceneSchedulerHolder extends AutoCloseable {
     SceneScheduler getSceneScheduler();
-
 }

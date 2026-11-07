@@ -19,23 +19,20 @@
               :as _event-map} frame
              ;; 再后续的参数整合成map传递
              {:keys [view-height view-width]}]]
-    (let [vp (assoc (viewport/get-viewport frame)
+    (let [record (:record cofx)
+          vp (assoc (viewport/get-viewport frame)
                :aspect (double (/ view-width view-height)))
           ^RayAccel scene-accel @(scene/subscribe scene-id :scene-accel)
           view-proj-inv (viewport/viewport->view-proj-inv vp)
           ^Ray ray (ScreenTransform/screenPointToWorldRay
                 view-proj-inv x y view-width view-height)
-          obj-candidates (.query scene-accel ray)]
-      (if (> (alength obj-candidates) 0)
-       (println "hit count: " (alength obj-candidates))
-       (println "miss object"))
-      (when-let [selected (Select/select scene-id ray obj-candidates)]
-        (println "select: " selected))
-      )
-    (let [record (:record cofx)]
+          obj-candidates (.query scene-accel ray)
+          selected
+          (when (> (alength obj-candidates) 0)
+            (Select/select scene-id ray obj-candidates))]
       {:record (assoc record
                  :selected-objects []
-                 :active-object nil)})))
+                 :active-object selected)})))
 
 ;; 物体多选
 (rf/reg-event-fx

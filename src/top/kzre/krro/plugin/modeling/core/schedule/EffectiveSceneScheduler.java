@@ -7,6 +7,7 @@ import top.kzre.krro.d3.core.scene.Hierarchy;
 import top.kzre.krro.d3.core.scene.SceneObject;
 import top.kzre.krro.d3.core.util.LongObjectMap;
 import top.kzre.krro.d3.core.util.cow.*;
+import top.kzre.krro.plugin.modeling.core.object.IActiveObjectHolder;
 import top.kzre.krro.plugin.modeling.core.project.K3DRuntime;
 import top.kzre.krro.plugin.modeling.core.schedule.resource.Geometry;
 import top.kzre.krro.plugin.modeling.core.schedule.resource.ResourceKey;
@@ -22,8 +23,13 @@ public abstract class EffectiveSceneScheduler extends AbstractSceneScheduler {
             CORNER_POSITIONS = Geometry.cornerPositions();
     ResourceKey<ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteInts>>>>
             TRIANGLE_INDICES = Geometry.triangleIndices();
-    public EffectiveSceneScheduler(Map<String, SceneRenderer> renderers, long sceneId) {
+    private final IActiveObjectHolder activeObjectHolder;
+    public EffectiveSceneScheduler(
+            Map<String, SceneRenderer> renderers,
+            long sceneId,
+            IActiveObjectHolder activeObjectHolder) {
         super(renderers, sceneId);
+        this.activeObjectHolder = activeObjectHolder;
     }
 
 
@@ -49,6 +55,10 @@ public abstract class EffectiveSceneScheduler extends AbstractSceneScheduler {
                 finalSessions.add(session);
             }
         }
+
+        SceneRenderContext ctx =  SceneRenderContext.builder()
+                .activeObjectId(activeObjectHolder.activeObject())
+                .build();
 
         // 去重资源集
         Set<ResourceKey<?>> resourceSet = new HashSet<>();
@@ -133,7 +143,7 @@ public abstract class EffectiveSceneScheduler extends AbstractSceneScheduler {
                             String renderId = session.getRenderId();
                             SceneRenderer renderer = renderers.get(renderId);
                             // 渲染器渲染视口会话
-                            renderer.render(session);
+                            renderer.render(session, ctx);
                         }
                     });
                     // 渲染时候出错，日志，并不产出任何异常
@@ -146,6 +156,5 @@ public abstract class EffectiveSceneScheduler extends AbstractSceneScheduler {
         } catch (Exception e) {
             System.err.println(e.getMessage());
         }
-
     }
 }

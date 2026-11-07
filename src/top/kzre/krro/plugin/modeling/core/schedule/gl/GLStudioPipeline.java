@@ -14,5 +14,6 @@ public interface GLStudioPipeline extends AutoCloseable{
     GLStudioPipeline setViewSize(int width, int height);
     GLStudioPipeline setViewProjMat4(float[] mat4);
     GLStudioPipeline setInstances(List<RenderInstance> instances);
+    GLStudioPipeline setActiveInstanceId(Long objId);
     CompletableFuture<TiledCanvas> render();
 }

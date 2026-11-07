@@ -15,7 +15,8 @@
   [view-proj-mat4
    view-width
    view-height
-   instances])
+   instances
+   active-instance-id])
 (defn- make-state []
   (-> map->State {}))
 
@@ -42,6 +43,10 @@
     (swap! state-atom assoc
            :instances instances)
     this)
+  (setActiveInstanceId [this obj-id]
+    (swap! state-atom assoc
+           :active-instance-id obj-id)
+    this)
   (render [_]
     (let [^SerialExecutor gl-thread
           (.getGlExecutor render-context)
@@ -49,7 +54,8 @@
           {:keys [view-width
                   view-height
                   instances
-                  view-proj-mat4]} @state-atom]
+                  view-proj-mat4
+                  active-instance-id]} @state-atom]
       (ExecutorUtils/runOnThread
         gl-thread
         (reify Callable
@@ -62,6 +68,8 @@
                      :view-proj-mat4 view-proj-mat4
                      :view-width view-width
                      :view-height view-height
+                     :active (when active-instance-id
+                               #{active-instance-id})
                      :instances instances})]
               ;; TODO 显示的从 GL 线程调度出来
               canvas)))))))
