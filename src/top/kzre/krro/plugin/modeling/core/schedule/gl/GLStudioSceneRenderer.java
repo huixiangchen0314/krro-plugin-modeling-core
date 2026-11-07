@@ -4,41 +4,44 @@ import top.kzre.krro.canvas.gl.resource.PixelFormat;
 import top.kzre.krro.d3.core.util.LongIntMap;
 import top.kzre.krro.d3.core.util.ResourceUtils;
 import top.kzre.krro.d3.core.util.cow.*;
-import top.kzre.krro.d3.renderer.studio.gl.GLRenderFlyweight;
-import top.kzre.krro.d3.renderer.studio.gl.GLRenderer;
-import top.kzre.krro.d3.renderer.studio.gl.GLStudioRenderContext;
-import top.kzre.krro.d3.renderer.studio.pipeline.RenderRequest;
+import top.kzre.krro.d3.renderer.gl.GLRenderFlyweight;
+import top.kzre.krro.d3.renderer.gl.GLStudioRenderContext;
+import top.kzre.krro.d3.renderer.resource.RenderInstance;
+import top.kzre.krro.d3.renderer.resource.SimpleMeshInstance;
 import top.kzre.krro.d3.renderer.studio.pipeline.RenderableMesh;
 import top.kzre.krro.plugin.modeling.core.schedule.SceneRenderer;
 import top.kzre.krro.plugin.modeling.core.schedule.ScheduleSession;
 import top.kzre.krro.plugin.modeling.core.schedule.Session;
 import top.kzre.krro.plugin.modeling.core.schedule.resource.Geometry;
 import top.kzre.krro.plugin.modeling.core.schedule.resource.ResourceKey;
-import top.kzre.krro.plugin.modeling.core.viewport.ViewportMath;
 import top.kzre.krro.util.math.KMath;
 import top.kzre.krro.util.tile.TiledCanvas;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
 public final class GLStudioSceneRenderer implements SceneRenderer {
 
     private final GLRenderFlyweight flyweight;
-
+    private final Function<GLStudioRenderContext, GLStudioPipeline> makePileline;
     private final ResourceKey<ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>>>
             cornerPositionsKey = Geometry.cornerPositions();
 
     private final ResourceKey<ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteInts>>>>
             triangleIndicesKey = Geometry.triangleIndices();
 
-    public GLStudioSceneRenderer(GLRenderFlyweight flyweight) {
+    public GLStudioSceneRenderer(GLRenderFlyweight flyweight,
+                                 Function<GLStudioRenderContext, GLStudioPipeline> makePipeline) {
         this.flyweight = flyweight;
+        this.makePileline = makePipeline;
     }
 
     @Override
     public ScheduleSession createSession() {
         GLStudioRenderContext context = new GLStudioRenderContext(flyweight, PixelFormat.RGBA8);
-        return new GLStudioRendererScheduleSession(context);
+        GLStudioPipeline pipeline = makePileline.apply(context);
+        return new GLStudioRendererScheduleSession(pipeline);
     }
 
     @Override
@@ -52,8 +55,7 @@ public final class GLStudioSceneRenderer implements SceneRenderer {
     @Override
     public void render(Session session) {
         GLStudioRendererScheduleSession studioSession = (GLStudioRendererScheduleSession) session;
-        GLRenderer renderer = studioSession.getRenderer();
-        float[] viewProjMat4 = studioSession.getViewProjMat4();
+        GLStudioPipeline pipeline = studioSession.getPipeline();
 
         // 两个表的 value() 必须成对取——prepare 需要按索引对齐
         ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>> posTable =
@@ -61,35 +63,24 @@ public final class GLStudioSceneRenderer implements SceneRenderer {
         ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteInts>>> idxTable =
                 triangleIndicesKey.value();
 
-        List<RenderableMesh> meshes = prepare(posTable, idxTable);
+        List<RenderInstance> instances = prepare(posTable, idxTable);
 
-        CompletableFuture<TiledCanvas> future = renderer.render(RenderRequest.builder()
-                .objects(meshes)
-                .viewHeight(studioSession.getHeight())
-                .viewWidth(studioSession.getWidth())
-                .viewMat4(viewProjMat4)
-                .build()
-        );
+        CompletableFuture<TiledCanvas> future = pipeline.begin()
+                .setViewProjMat4(studioSession.getViewProjMat4())
+                .setViewSize(studioSession.getWidth(), studioSession.getHeight())
+                .setInstances(instances)
+                .render();
 
         future.handle((v, e) -> {
             // 释放捕获资源——两个表都要关
             try {
+                // 资源不转移，仍然属于表
                 RuntimeException ignore = ResourceUtils.closeDelayError(posTable, idxTable);
             } catch (RuntimeException closeEx) {
                 if (e == null) {
                     e = closeEx;
                 } else {
                     e.addSuppressed(closeEx);
-                }
-            }
-
-            // 释放 prepare 构造的临时 COW 包装（底层 arena 由表释放，这里只清引用）
-            // TODO RenderableMesh 不是COW，资源不属于它
-            for (RenderableMesh mesh : meshes) {
-                try {
-                    mesh.close();
-                } catch (RuntimeException ignored) {
-                    // 渲染已完成，close 失败只影响 GC 时机，不影响正确性
                 }
             }
 
@@ -114,10 +105,10 @@ public final class GLStudioSceneRenderer implements SceneRenderer {
      * 影响原始资源的生命周期，原始表的 close 由 {@link #render} 的
      * future 回调统一负责。
      */
-    private List<RenderableMesh> prepare(
+    private List<RenderInstance> prepare(
             ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteFloats>>> posTable,
             ResourceTable<CopyOnWriteObject<ListResource<CopyOnWriteInts>>> idxTable) {
-        List<RenderableMesh> result = new ArrayList<>();
+        List<RenderInstance> result = new ArrayList<>();
 
         Iterator<LongIntMap.MapEntry> iterator = posTable.indexMap().getSnapshot().getMap().iterator();
         while (iterator.hasNext()) {
@@ -129,12 +120,15 @@ public final class GLStudioSceneRenderer implements SceneRenderer {
             if (pos == null || idx == null) {
                 continue;
             }
-            result.add(new RenderableMesh(
-                    new DefaultCopyOnWriteObject<>(
-                            new ListResource<>(pos.getSnapshot().getList())),
-                    new DefaultCopyOnWriteObject<>(
-                            new ListResource<>(idx.getSnapshot().getList())),
-                    KMath.mat4Identity()));
+            SimpleMeshInstance meshInstance = SimpleMeshInstance.builder()
+                    .id(objId)
+                    .cornerPositions(new DefaultCopyOnWriteObject<>(
+                            new ListResource<>(pos.getSnapshot().getList())))
+                    .triangleIndices(new DefaultCopyOnWriteObject<>(
+                            new ListResource<>(idx.getSnapshot().getList())))
+                    .modelMat4(KMath.mat4Identity()).build();
+
+            result.add(meshInstance);
         }
 
         return result;

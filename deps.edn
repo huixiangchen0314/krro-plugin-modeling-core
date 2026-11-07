@@ -9,7 +9,7 @@
         top.kzre/krro-plugin-painting-core {:mvn/version "0.1.0"}
 
         ;; 直接依赖具体渲染器
-        top.kzre/krro-d3-renderer-studio-gl {:mvn/version "0.1.0"}
+        top.kzre/krro-d3-renderer-gl {:mvn/version "0.1.0"}
 
         ;; 非强依赖，可能独立演变，显示声明
         com.taoensso/timbre {:mvn/version "6.3.1"}
